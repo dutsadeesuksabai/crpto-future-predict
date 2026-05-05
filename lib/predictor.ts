@@ -16,11 +16,14 @@ export type Signal = {
   bullish: boolean
 }
 
-function sigmoid(x: number): number {
-  return 1 / (1 + Math.exp(-x))
+export type ExtraSignals = {
+  orderBook?: number    // 0-100 score
+  fundingRate?: number  // 0-100 score
+  fearGreed?: number    // 0-100 score
+  mtfConsensus?: number // 0-100 score
 }
 
-export function predict(ind: IndicatorSet): PredictionResult {
+export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): PredictionResult {
   const signals: Signal[] = []
 
   // RSI signal (weight 20)
@@ -111,6 +114,54 @@ export function predict(ind: IndicatorSet): PredictionResult {
     weight: 10,
     bullish: momBullish,
   })
+
+  // Order Book Imbalance (weight 18, high reliability)
+  if (extra.orderBook !== undefined) {
+    const obBullish = extra.orderBook > 50
+    signals.push({
+      name: 'Order Book',
+      value: Math.round(extra.orderBook * 10) / 10,
+      interpretation: extra.orderBook > 65 ? 'Strong bid pressure' : extra.orderBook < 35 ? 'Strong ask pressure' : 'Balanced book',
+      weight: 18,
+      bullish: obBullish,
+    })
+  }
+
+  // Funding Rate (weight 12, contrarian)
+  if (extra.fundingRate !== undefined) {
+    const frBullish = extra.fundingRate > 50
+    signals.push({
+      name: 'Funding Rate',
+      value: Math.round(extra.fundingRate * 10) / 10,
+      interpretation: extra.fundingRate > 70 ? 'Shorts overcrowded' : extra.fundingRate < 30 ? 'Longs overcrowded' : 'Neutral funding',
+      weight: 12,
+      bullish: frBullish,
+    })
+  }
+
+  // Fear & Greed (weight 8, macro contrarian)
+  if (extra.fearGreed !== undefined) {
+    const fgBullish = extra.fearGreed > 50
+    signals.push({
+      name: 'Fear & Greed',
+      value: Math.round(extra.fearGreed * 10) / 10,
+      interpretation: extra.fearGreed >= 80 ? 'Extreme Fear (buy)' : extra.fearGreed >= 60 ? 'Fear zone' : extra.fearGreed <= 20 ? 'Extreme Greed (sell)' : extra.fearGreed <= 40 ? 'Greed zone' : 'Neutral sentiment',
+      weight: 8,
+      bullish: fgBullish,
+    })
+  }
+
+  // Multi-timeframe consensus (weight 20 when available)
+  if (extra.mtfConsensus !== undefined) {
+    const mtfBullish = extra.mtfConsensus > 50
+    signals.push({
+      name: 'MTF Consensus',
+      value: Math.round(extra.mtfConsensus * 10) / 10,
+      interpretation: extra.mtfConsensus > 70 ? 'All TFs bullish' : extra.mtfConsensus < 30 ? 'All TFs bearish' : 'Mixed timeframes',
+      weight: 20,
+      bullish: mtfBullish,
+    })
+  }
 
   // Weighted score calculation
   const totalWeight = signals.reduce((a, s) => a + s.weight, 0)

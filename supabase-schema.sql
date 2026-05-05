@@ -1,4 +1,5 @@
--- Run this in your Supabase SQL editor to set up the predictions table
+-- Run this in your Supabase SQL editor
+-- https://supabase.com/dashboard/project/xwjmzpwqldaedgrbddhx/sql/new
 
 CREATE TABLE IF NOT EXISTS predictions (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -42,3 +43,20 @@ SELECT
 FROM predictions
 GROUP BY symbol, timeframe
 ORDER BY symbol, timeframe;
+
+-- Alerts table (for Telegram deduplication)
+CREATE TABLE IF NOT EXISTS alerts (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  symbol VARCHAR(20),
+  timeframe VARCHAR(10),
+  direction VARCHAR(10),
+  confidence DECIMAL(5,2),
+  channel VARCHAR(20) DEFAULT 'telegram',
+  sent_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_sent_at ON alerts(sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_symbol_tf ON alerts(symbol, timeframe, direction);
+
+ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for anon" ON alerts FOR ALL USING (true) WITH CHECK (true);
