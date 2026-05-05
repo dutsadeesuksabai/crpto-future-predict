@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendTelegramAlert, type AlertPayload } from '@/lib/telegram'
 import { sendEmailAlert } from '@/lib/email'
+import { sendDiscordAlert } from '@/lib/discord'
 import { getSupabaseAdmin } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
@@ -27,18 +28,23 @@ export async function POST(req: NextRequest) {
     } catch {}
   }
 
-  // Send in parallel
-  const [telegramSent, emailSent] = await Promise.all([
+  // Send all channels in parallel
+  const [telegramSent, emailSent, discordSent] = await Promise.all([
     channels.includes('telegram') ? sendTelegramAlert(body) : Promise.resolve(false),
     channels.includes('email')    ? sendEmailAlert(body)    : Promise.resolve(false),
+    channels.includes('discord')  ? sendDiscordAlert(body)  : Promise.resolve(false),
   ])
 
-  const anySent = telegramSent || emailSent
+  const anySent = telegramSent || emailSent || discordSent
 
   if (anySent) {
     try {
       const db = getSupabaseAdmin()
-      const channelList = [telegramSent && 'telegram', emailSent && 'email'].filter(Boolean).join(',')
+      const channelList = [
+        telegramSent && 'telegram',
+        emailSent    && 'email',
+        discordSent  && 'discord',
+      ].filter(Boolean).join(',')
       await db.from('alerts').insert([{
         symbol: body.symbol,
         timeframe: body.timeframe,
@@ -49,5 +55,5 @@ export async function POST(req: NextRequest) {
     } catch {}
   }
 
-  return NextResponse.json({ sent: anySent, telegram: telegramSent, email: emailSent })
+  return NextResponse.json({ sent: anySent, telegram: telegramSent, email: emailSent, discord: discordSent })
 }

@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 export type AlertConfig = {
   telegramEnabled: boolean
   emailEnabled: boolean
+  discordEnabled: boolean
   threshold: number
   autoSave: boolean
   autoSaveIntervalMin: number
@@ -17,12 +18,13 @@ interface Props {
 const DEFAULT: AlertConfig = {
   telegramEnabled: false,
   emailEnabled: false,
+  discordEnabled: false,
   threshold: 80,
   autoSave: false,
   autoSaveIntervalMin: 10,
 }
 
-type TestKey = 'telegram' | 'email'
+type TestKey = 'telegram' | 'email' | 'discord'
 type TestState = 'idle' | 'sending' | 'ok' | 'fail'
 
 function Toggle({ on, onToggle, color = 'bg-green-600' }: { on: boolean; onToggle: () => void; color?: string }) {
@@ -37,7 +39,7 @@ function Toggle({ on, onToggle, color = 'bg-green-600' }: { on: boolean; onToggl
 export function AlertSettings({ onConfigChange }: Props) {
   const [cfg, setCfg] = useState<AlertConfig>(DEFAULT)
   const [open, setOpen] = useState(false)
-  const [testStatus, setTestStatus] = useState<Record<TestKey, TestState>>({ telegram: 'idle', email: 'idle' })
+  const [testStatus, setTestStatus] = useState<Record<TestKey, TestState>>({ telegram: 'idle', email: 'idle', discord: 'idle' })
 
   useEffect(() => {
     const stored = localStorage.getItem('alertConfig')
@@ -80,7 +82,7 @@ export function AlertSettings({ onConfigChange }: Props) {
     setTimeout(() => setTestStatus((s) => ({ ...s, [channel]: 'idle' })), 3000)
   }
 
-  const activeCount = [cfg.telegramEnabled, cfg.emailEnabled].filter(Boolean).length
+  const activeCount = [cfg.telegramEnabled, cfg.emailEnabled, cfg.discordEnabled].filter(Boolean).length
 
   return (
     <div className="bg-gray-900 rounded-2xl border border-gray-800">
@@ -91,6 +93,7 @@ export function AlertSettings({ onConfigChange }: Props) {
           {cfg.autoSave && <span className="text-xs bg-blue-900/50 text-blue-400 px-2 py-0.5 rounded-full">Auto-save {cfg.autoSaveIntervalMin}m</span>}
           {cfg.telegramEnabled && <span className="text-xs bg-sky-900/50 text-sky-400 px-2 py-0.5 rounded-full">Telegram</span>}
           {cfg.emailEnabled && <span className="text-xs bg-purple-900/50 text-purple-400 px-2 py-0.5 rounded-full">Email</span>}
+          {cfg.discordEnabled && <span className="text-xs bg-indigo-900/50 text-indigo-400 px-2 py-0.5 rounded-full">Discord</span>}
           {activeCount > 0 && <span className="text-xs text-gray-600">≥{cfg.threshold}%</span>}
         </div>
         <span className="text-gray-600 ml-2">{open ? '▲' : '▼'}</span>
@@ -152,6 +155,23 @@ export function AlertSettings({ onConfigChange }: Props) {
             </div>
             {cfg.telegramEnabled && (
               <TestButton status={testStatus.telegram} onClick={() => testAlert('telegram')} label="Test Telegram" />
+            )}
+          </div>
+
+          {/* Discord */}
+          <div className="bg-gray-800/40 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🎮</span>
+                <div>
+                  <div className="text-sm text-gray-300 font-medium">Discord Alerts</div>
+                  <div className="text-xs text-gray-600">Requires DISCORD_WEBHOOK_URL in .env</div>
+                </div>
+              </div>
+              <Toggle on={cfg.discordEnabled} onToggle={() => update({ discordEnabled: !cfg.discordEnabled })} color="bg-indigo-600" />
+            </div>
+            {cfg.discordEnabled && (
+              <TestButton status={testStatus.discord} onClick={() => testAlert('discord')} label="Test Discord" />
             )}
           </div>
 

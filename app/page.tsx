@@ -148,7 +148,8 @@ export default function Home() {
   const triggerAlerts = useCallback(async (newData: Record<string, SymbolData>) => {
     const channels = [
       alertConfig.telegramEnabled && 'telegram',
-      alertConfig.emailEnabled && 'email',
+      alertConfig.emailEnabled    && 'email',
+      alertConfig.discordEnabled  && 'discord',
     ].filter(Boolean) as string[]
     if (channels.length === 0) return
 
