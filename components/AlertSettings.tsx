@@ -6,7 +6,7 @@ export type AlertConfig = {
   telegramEnabled: boolean
   emailEnabled: boolean
   discordEnabled: boolean
-  threshold: number
+  thresholds: number[]   // list of confidence levels that trigger alerts, e.g. [75, 80, 90]
   autoSave: boolean
   autoSaveIntervalMin: number
 }
@@ -15,11 +15,13 @@ interface Props {
   onConfigChange: (cfg: AlertConfig) => void
 }
 
+const THRESHOLD_OPTIONS = [70, 75, 80, 90] as const
+
 const DEFAULT: AlertConfig = {
   telegramEnabled: false,
   emailEnabled: false,
   discordEnabled: false,
-  threshold: 80,
+  thresholds: [80],
   autoSave: false,
   autoSaveIntervalMin: 10,
 }
@@ -36,6 +38,13 @@ function Toggle({ on, onToggle, color = 'bg-green-600' }: { on: boolean; onToggl
   )
 }
 
+function tierLabel(t: number) {
+  if (t >= 90) return { label: 'Ultra', color: 'bg-green-700 text-white border-green-600' }
+  if (t >= 80) return { label: 'Strong', color: 'bg-amber-700 text-white border-amber-600' }
+  if (t >= 75) return { label: 'Good', color: 'bg-emerald-700 text-white border-emerald-600' }
+  return { label: 'Normal', color: 'bg-gray-700 text-gray-200 border-gray-600' }
+}
+
 export function AlertSettings({ onConfigChange }: Props) {
   const [cfg, setCfg] = useState<AlertConfig>(DEFAULT)
   const [open, setOpen] = useState(false)
@@ -45,7 +54,13 @@ export function AlertSettings({ onConfigChange }: Props) {
     const stored = localStorage.getItem('alertConfig')
     if (stored) {
       try {
-        const parsed = { ...DEFAULT, ...JSON.parse(stored) }
+        const raw = JSON.parse(stored)
+        // migrate old single threshold → thresholds array
+        if (typeof raw.threshold === 'number' && !raw.thresholds) {
+          raw.thresholds = [raw.threshold]
+          delete raw.threshold
+        }
+        const parsed: AlertConfig = { ...DEFAULT, ...raw }
         setCfg(parsed)
         onConfigChange(parsed)
       } catch {}
@@ -58,6 +73,12 @@ export function AlertSettings({ onConfigChange }: Props) {
     setCfg(next)
     localStorage.setItem('alertConfig', JSON.stringify(next))
     onConfigChange(next)
+  }
+
+  function toggleThreshold(t: number) {
+    const has = cfg.thresholds.includes(t)
+    const next = has ? cfg.thresholds.filter((x) => x !== t) : [...cfg.thresholds, t].sort((a, b) => a - b)
+    update({ thresholds: next })
   }
 
   async function testAlert(channel: TestKey) {
@@ -74,7 +95,7 @@ export function AlertSettings({ onConfigChange }: Props) {
         }),
       })
       const d = await res.json()
-      const sent = channel === 'telegram' ? d.telegram : d.email
+      const sent = d[channel] ?? d.sent
       setTestStatus((s) => ({ ...s, [channel]: sent ? 'ok' : 'fail' }))
     } catch {
       setTestStatus((s) => ({ ...s, [channel]: 'fail' }))
@@ -83,6 +104,7 @@ export function AlertSettings({ onConfigChange }: Props) {
   }
 
   const activeCount = [cfg.telegramEnabled, cfg.emailEnabled, cfg.discordEnabled].filter(Boolean).length
+  const minThreshold = cfg.thresholds.length > 0 ? Math.min(...cfg.thresholds) : null
 
   return (
     <div className="bg-gray-900 rounded-2xl border border-gray-800">
@@ -94,7 +116,9 @@ export function AlertSettings({ onConfigChange }: Props) {
           {cfg.telegramEnabled && <span className="text-xs bg-sky-900/50 text-sky-400 px-2 py-0.5 rounded-full">Telegram</span>}
           {cfg.emailEnabled && <span className="text-xs bg-purple-900/50 text-purple-400 px-2 py-0.5 rounded-full">Email</span>}
           {cfg.discordEnabled && <span className="text-xs bg-indigo-900/50 text-indigo-400 px-2 py-0.5 rounded-full">Discord</span>}
-          {activeCount > 0 && <span className="text-xs text-gray-600">≥{cfg.threshold}%</span>}
+          {activeCount > 0 && cfg.thresholds.length > 0 && (
+            <span className="text-xs text-gray-600">≥{cfg.thresholds.join('/')}%</span>
+          )}
         </div>
         <span className="text-gray-600 ml-2">{open ? '▲' : '▼'}</span>
       </button>
@@ -126,18 +150,25 @@ export function AlertSettings({ onConfigChange }: Props) {
 
           <div className="border-t border-gray-800" />
 
-          {/* Threshold (shared for all alert channels) */}
-          {(cfg.telegramEnabled || cfg.emailEnabled) && (
+          {/* Alert thresholds — multi-select */}
+          {activeCount > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-2">Alert threshold (both channels)</div>
-              <div className="flex items-center gap-2">
-                {[70, 75, 80, 85, 90].map((t) => (
-                  <button key={t} onClick={() => update({ threshold: t })}
-                    className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${cfg.threshold === t ? 'bg-amber-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
-                    {t}%
-                  </button>
-                ))}
+              <div className="text-xs text-gray-500 mb-2">Alert when confidence reaches (select multiple)</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {THRESHOLD_OPTIONS.map((t) => {
+                  const { label, color } = tierLabel(t)
+                  const active = cfg.thresholds.includes(t)
+                  return (
+                    <button key={t} onClick={() => toggleThreshold(t)}
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-all font-semibold ${active ? color : 'bg-gray-800 text-gray-500 border-gray-700 hover:border-gray-500'}`}>
+                      ≥{t}% <span className="opacity-70">{label}</span>
+                    </button>
+                  )
+                })}
               </div>
+              {cfg.thresholds.length === 0 && (
+                <div className="text-xs text-yellow-600 mt-1">Select at least one threshold to receive alerts</div>
+              )}
             </div>
           )}
 

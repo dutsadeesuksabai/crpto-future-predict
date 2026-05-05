@@ -54,13 +54,13 @@ export default function Home() {
   const [stats, setStats] = useState<Record<string, Record<string, { total: number; correct: number; accuracy: number }>>>({})
   const [supabaseEnabled, setSupabaseEnabled] = useState(true)
   const [alertConfig, setAlertConfig] = useState<AlertConfig>({
-  telegramEnabled: false,
-  threshold: 80,
-  autoSave: false,
-  autoSaveIntervalMin: 5, // สมมติว่ามีอยู่แล้ว
-  emailEnabled: false,    // เพิ่มบรรทัดนี้
-  discordEnabled: false   // เพิ่มบรรทัดนี้
-});
+    telegramEnabled: false,
+    emailEnabled: false,
+    discordEnabled: false,
+    thresholds: [80],
+    autoSave: false,
+    autoSaveIntervalMin: 5,
+  })
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const alertedRef = useRef<Set<string>>(new Set())
 
@@ -151,46 +151,53 @@ export default function Home() {
     if (!auto) setSaving((s) => ({ ...s, [key]: false }))
   }, [saving, saved, supabaseEnabled, data, fetchPredictions])
 
-  // Telegram alert trigger
-const triggerAlerts = useCallback(async (newData: Record<string, SymbolData>) => {
+  const triggerAlerts = useCallback(async (newData: Record<string, SymbolData>) => {
     const channels = [
       alertConfig.telegramEnabled && 'telegram',
       alertConfig.emailEnabled    && 'email',
       alertConfig.discordEnabled  && 'discord',
-    ].filter(Boolean) as string[];
+    ].filter(Boolean) as string[]
 
-    if (channels.length === 0) return
+    if (channels.length === 0 || alertConfig.thresholds.length === 0) return
+
+    const window30m = Math.floor(Date.now() / 1_800_000)
 
     for (const sym of SYMBOLS) {
       const d = newData[sym]
       if (!d) continue
       for (const tf of ['10m', '30m'] as const) {
         const pred = d.predictions[tf]
-        const key = `${sym}-${tf}-${pred.direction}-${Math.floor(Date.now() / 1_800_000)}`
-        
-        if (pred.confidence >= alertConfig.threshold && !alertedRef.current.has(key)) {
-          alertedRef.current.add(key)
-          fetch('/api/alert', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              symbol: sym, timeframe: tf,
-              direction: pred.direction,
-              confidence: pred.confidence,
-              price: d.ticker.price,
-              bullScore: pred.bullScore,
-              bearScore: pred.bearScore,
-              channels,
-            }),
-          }).catch(() => {})
-        }
+        // find the highest matching threshold that hasn't fired this window
+        const matched = [...alertConfig.thresholds]
+          .sort((a, b) => b - a)
+          .find((t) => {
+            if (pred.confidence < t) return false
+            const key = `${sym}-${tf}-${pred.direction}-${t}-${window30m}`
+            return !alertedRef.current.has(key)
+          })
+        if (matched == null) continue
+        const key = `${sym}-${tf}-${pred.direction}-${matched}-${window30m}`
+        alertedRef.current.add(key)
+        fetch('/api/alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: sym, timeframe: tf,
+            direction: pred.direction,
+            confidence: pred.confidence,
+            price: d.ticker.price,
+            bullScore: pred.bullScore,
+            bearScore: pred.bearScore,
+            channels,
+          }),
+        }).catch(() => {})
       }
     }
   }, [
-    alertConfig.telegramEnabled, 
-    alertConfig.emailEnabled, 
-    alertConfig.discordEnabled, 
-    alertConfig.threshold
+    alertConfig.telegramEnabled,
+    alertConfig.emailEnabled,
+    alertConfig.discordEnabled,
+    alertConfig.thresholds,
   ])
 
   // Auto-save interval
@@ -251,7 +258,8 @@ const triggerAlerts = useCallback(async (newData: Record<string, SymbolData>) =>
             </button>
           ))}
           {alertConfig.autoSave && <span className="text-xs bg-blue-900/40 text-blue-400 px-2 py-1 rounded-full">Auto-save every {alertConfig.autoSaveIntervalMin}m</span>}
-          {alertConfig.telegramEnabled && <span className="text-xs bg-green-900/40 text-green-400 px-2 py-1 rounded-full">Telegram ≥{alertConfig.threshold}%</span>}
+          {alertConfig.telegramEnabled && <span className="text-xs bg-green-900/40 text-green-400 px-2 py-1 rounded-full">Telegram ≥{alertConfig.thresholds.join('/')}%</span>}
+          {alertConfig.discordEnabled && <span className="text-xs bg-indigo-900/40 text-indigo-400 px-2 py-1 rounded-full">Discord ≥{alertConfig.thresholds.join('/')}%</span>}
           {!supabaseEnabled && <div className="ml-auto text-xs text-yellow-600 bg-yellow-900/30 px-3 py-2 rounded-xl">Supabase not configured</div>}
         </div>
 

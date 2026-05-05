@@ -21,55 +21,50 @@ function getTier(conf: number): Tier {
   return 'normal'
 }
 
-const TIER_STYLES: Record<Tier, {
-  card: string
-  border: string
-  badge: string
-  badgeText: string
-  glow: string
-  label: string
+const TIER_META: Record<Tier, {
+  badge: string        // badge bg (uses direction color override below)
+  labelUp: string      // badge text when bullish
+  labelDown: string    // badge text when bearish
   labelColor: string
-  icon: string
+  glowAlpha: number    // glow intensity multiplier
+  bgUp: string         // card bg when bullish
+  bgDown: string       // card bg when bearish
 }> = {
   ultra: {
-    card: 'bg-gradient-to-b from-purple-950/80 via-gray-900 to-gray-900',
-    border: 'border-purple-500',
-    badge: 'bg-gradient-to-r from-purple-600 to-pink-600',
-    badgeText: 'text-white',
-    glow: '0 0 32px rgba(168,85,247,0.45), 0 0 8px rgba(168,85,247,0.3)',
-    label: 'ULTRA SIGNAL 🔥',
-    labelColor: 'text-purple-300',
-    icon: '🔥',
+    badge: '',
+    labelUp:   'ULTRA ขึ้น 🔥',
+    labelDown: 'ULTRA ลง 🔥',
+    labelColor: 'text-white',
+    glowAlpha: 0.55,
+    bgUp:   'bg-gradient-to-b from-green-950/70 via-gray-900 to-gray-900',
+    bgDown: 'bg-gradient-to-b from-red-950/70 via-gray-900 to-gray-900',
   },
   strong: {
-    card: 'bg-gradient-to-b from-amber-950/60 via-gray-900 to-gray-900',
-    border: 'border-amber-400',
-    badge: 'bg-gradient-to-r from-amber-500 to-orange-500',
-    badgeText: 'text-white',
-    glow: '0 0 24px rgba(245,158,11,0.40), 0 0 6px rgba(245,158,11,0.25)',
-    label: 'STRONG SIGNAL ⚡',
-    labelColor: 'text-amber-300',
-    icon: '⚡',
+    badge: '',
+    labelUp:   'STRONG ขึ้น ⚡',
+    labelDown: 'STRONG ลง ⚡',
+    labelColor: 'text-white',
+    glowAlpha: 0.40,
+    bgUp:   'bg-gradient-to-b from-green-950/50 via-gray-900 to-gray-900',
+    bgDown: 'bg-gradient-to-b from-red-950/50 via-gray-900 to-gray-900',
   },
   good: {
-    card: 'bg-gradient-to-b from-emerald-950/40 via-gray-900 to-gray-900',
-    border: 'border-emerald-500',
-    badge: 'bg-emerald-600',
-    badgeText: 'text-white',
-    glow: '0 0 16px rgba(16,185,129,0.30)',
-    label: 'GOOD SIGNAL ✓',
-    labelColor: 'text-emerald-400',
-    icon: '✓',
+    badge: '',
+    labelUp:   'GOOD ขึ้น ✓',
+    labelDown: 'GOOD ลง ✓',
+    labelColor: 'text-white',
+    glowAlpha: 0.25,
+    bgUp:   'bg-gradient-to-b from-green-950/30 via-gray-900 to-gray-900',
+    bgDown: 'bg-gradient-to-b from-red-950/30 via-gray-900 to-gray-900',
   },
   normal: {
-    card: 'bg-gray-900',
-    border: '',
-    badge: 'bg-gray-700',
-    badgeText: 'text-gray-300',
-    glow: 'none',
-    label: 'WEAK SIGNAL',
-    labelColor: 'text-gray-500',
-    icon: '~',
+    badge: '',
+    labelUp:   'SIGNAL',
+    labelDown: 'SIGNAL',
+    labelColor: 'text-gray-400',
+    glowAlpha: 0,
+    bgUp:   'bg-gray-900',
+    bgDown: 'bg-gray-900',
   },
 }
 
@@ -77,18 +72,11 @@ function ConfidenceRing({ conf, isUp }: { conf: number; isUp: boolean }) {
   const r = 32
   const circ = 2 * Math.PI * r
   const pct = conf / 100
-  const tier = getTier(conf)
-  const strokeColor =
-    tier === 'ultra' ? '#a855f7' :
-    tier === 'strong' ? '#f59e0b' :
-    tier === 'good' ? '#10b981' :
-    isUp ? '#22c55e' : '#ef4444'
+  const strokeColor = isUp ? '#22c55e' : '#ef4444'
 
   return (
     <svg width={80} height={80} className="relative">
-      {/* Track */}
       <circle cx={40} cy={40} r={r} fill="none" stroke="#1f2937" strokeWidth={5} />
-      {/* Progress */}
       <circle
         cx={40} cy={40} r={r} fill="none"
         stroke={strokeColor} strokeWidth={5}
@@ -97,10 +85,8 @@ function ConfidenceRing({ conf, isUp }: { conf: number; isUp: boolean }) {
         strokeDashoffset={circ * 0.25}
         style={{ transition: 'stroke-dasharray 0.8s ease' }}
       />
-      {/* Center text */}
       <text x={40} y={36} textAnchor="middle" fontSize={13} fontWeight="bold" fill={strokeColor}>{conf.toFixed(0)}</text>
       <text x={40} y={48} textAnchor="middle" fontSize={8} fill="#6b7280">%</text>
-      {/* Direction arrow */}
       {isUp ? (
         <polygon points="40,24 35,30 45,30" fill={strokeColor} opacity={0.8} />
       ) : (
@@ -114,37 +100,40 @@ export function PredictionCard({ timeframe, prediction, symbol, onSave, saving, 
   const isUp = prediction.direction === 'up'
   const conf = prediction.confidence
   const tier = getTier(conf)
-  const ts = TIER_STYLES[tier]
-  const dirColor = isUp ? (tier === 'normal' ? '#22c55e' : undefined) : (tier === 'normal' ? '#ef4444' : undefined)
+  const tm = TIER_META[tier]
 
-  // Override direction color for non-normal tiers
-  const accentColor =
-    tier === 'ultra' ? '#c084fc' :
-    tier === 'strong' ? '#fbbf24' :
-    tier === 'good' ? '#34d399' :
-    isUp ? '#22c55e' : '#ef4444'
+  const borderColor = isUp ? '#22c55e' : '#ef4444'
+  const glowColor = isUp ? `rgba(34,197,94,${tm.glowAlpha})` : `rgba(239,68,68,${tm.glowAlpha})`
+  const boxShadow = tm.glowAlpha > 0
+    ? `0 0 20px ${glowColor}, 0 0 40px ${glowColor.replace(String(tm.glowAlpha), String(tm.glowAlpha * 0.4))}, inset 0 0 0 2px ${borderColor}`
+    : `inset 0 0 0 2px ${borderColor}`
+
+  const badgeBg = isUp ? 'bg-green-600' : 'bg-red-600'
+  const accentColor = isUp ? '#22c55e' : '#ef4444'
+  const badgeLabel = isUp ? tm.labelUp : tm.labelDown
+  const cardBg = isUp ? tm.bgUp : tm.bgDown
 
   return (
     <div
-      className={`${ts.card} rounded-2xl p-5 border-2 ${ts.border || (isUp ? 'border-green-900' : 'border-red-900')} relative overflow-hidden transition-all duration-500`}
-      style={{ boxShadow: ts.glow !== 'none' ? ts.glow : undefined }}
+      className={`${cardBg} rounded-2xl p-5 relative overflow-hidden transition-all duration-500`}
+      style={{ boxShadow }}
     >
       {/* Animated pulse bg for ultra/strong */}
       {(tier === 'ultra' || tier === 'strong') && (
         <div
           className="absolute inset-0 rounded-2xl pointer-events-none animate-pulse"
           style={{
-            background: tier === 'ultra'
-              ? 'radial-gradient(ellipse at top, rgba(168,85,247,0.12) 0%, transparent 70%)'
-              : 'radial-gradient(ellipse at top, rgba(245,158,11,0.10) 0%, transparent 70%)',
+            background: isUp
+              ? `radial-gradient(ellipse at top, rgba(34,197,94,${tier === 'ultra' ? 0.12 : 0.08}) 0%, transparent 70%)`
+              : `radial-gradient(ellipse at top, rgba(239,68,68,${tier === 'ultra' ? 0.12 : 0.08}) 0%, transparent 70%)`,
           }}
         />
       )}
 
       {/* Signal tier badge */}
       {tier !== 'normal' && (
-        <div className={`absolute top-3 right-3 ${ts.badge} ${ts.badgeText} text-xs font-black px-2.5 py-1 rounded-full tracking-wide`}>
-          {ts.label}
+        <div className={`absolute top-3 right-3 ${badgeBg} text-white text-xs font-black px-2.5 py-1 rounded-full tracking-wide`}>
+          {badgeLabel}
         </div>
       )}
 
@@ -170,13 +159,13 @@ export function PredictionCard({ timeframe, prediction, symbol, onSave, saving, 
         <div>
           <div className="text-xs text-gray-500 mb-0.5">Expected direction</div>
           <div className="text-xl font-black flex items-center gap-2" style={{ color: accentColor }}>
-            {isUp ? '▲ BULLISH' : '▼ BEARISH'}
+            {isUp ? '▲ ขึ้น' : '▼ ลง'}
           </div>
         </div>
         <div className="text-right">
           <div className="text-xs text-gray-500 mb-0.5">Confidence</div>
           <div className="font-black text-lg" style={{ color: accentColor }}>{conf.toFixed(1)}%</div>
-          <div className={`text-xs font-semibold ${ts.labelColor}`}>{ts.label}</div>
+          <div className={`text-xs font-semibold ${tm.labelColor}`}>{badgeLabel}</div>
         </div>
       </div>
 
@@ -191,12 +180,9 @@ export function PredictionCard({ timeframe, prediction, symbol, onSave, saving, 
             className="absolute left-0 top-0 h-full rounded-full transition-all duration-700"
             style={{
               width: `${prediction.bullScore}%`,
-              background: prediction.bullScore >= 75
-                ? `linear-gradient(90deg, #22c55e, ${accentColor})`
-                : '#22c55e',
+              background: '#22c55e',
             }}
           />
-          {/* Center line */}
           <div className="absolute left-1/2 top-0 w-px h-full bg-gray-600" />
         </div>
       </div>
@@ -233,7 +219,9 @@ export function PredictionCard({ timeframe, prediction, symbol, onSave, saving, 
               : 'text-white cursor-pointer hover:opacity-90 active:scale-95'
         }`}
         style={!saved && !saving ? {
-          background: `linear-gradient(90deg, #2563eb, ${accentColor}60)`,
+          background: isUp
+            ? `linear-gradient(90deg, #166534, #22c55e60)`
+            : `linear-gradient(90deg, #7f1d1d, #ef444460)`,
           border: `1px solid ${accentColor}40`,
         } : {}}
       >
