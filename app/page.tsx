@@ -53,7 +53,14 @@ export default function Home() {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [stats, setStats] = useState<Record<string, Record<string, { total: number; correct: number; accuracy: number }>>>({})
   const [supabaseEnabled, setSupabaseEnabled] = useState(true)
-  const [alertConfig, setAlertConfig] = useState<AlertConfig>({ telegramEnabled: false, threshold: 80, autoSave: false, autoSaveIntervalMin: 10 })
+  const [alertConfig, setAlertConfig] = useState<AlertConfig>({
+  telegramEnabled: false,
+  threshold: 80,
+  autoSave: false,
+  autoSaveIntervalMin: 5, // สมมติว่ามีอยู่แล้ว
+  emailEnabled: false,    // เพิ่มบรรทัดนี้
+  discordEnabled: false   // เพิ่มบรรทัดนี้
+});
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const alertedRef = useRef<Set<string>>(new Set())
 
@@ -145,12 +152,13 @@ export default function Home() {
   }, [saving, saved, supabaseEnabled, data, fetchPredictions])
 
   // Telegram alert trigger
-  const triggerAlerts = useCallback(async (newData: Record<string, SymbolData>) => {
+const triggerAlerts = useCallback(async (newData: Record<string, SymbolData>) => {
     const channels = [
       alertConfig.telegramEnabled && 'telegram',
       alertConfig.emailEnabled    && 'email',
       alertConfig.discordEnabled  && 'discord',
-    ].filter(Boolean) as string[]
+    ].filter(Boolean) as string[];
+
     if (channels.length === 0) return
 
     for (const sym of SYMBOLS) {
@@ -159,6 +167,7 @@ export default function Home() {
       for (const tf of ['10m', '30m'] as const) {
         const pred = d.predictions[tf]
         const key = `${sym}-${tf}-${pred.direction}-${Math.floor(Date.now() / 1_800_000)}`
+        
         if (pred.confidence >= alertConfig.threshold && !alertedRef.current.has(key)) {
           alertedRef.current.add(key)
           fetch('/api/alert', {
@@ -177,7 +186,12 @@ export default function Home() {
         }
       }
     }
-  }, [alertConfig.telegramEnabled, alertConfig.threshold])
+  }, [
+    alertConfig.telegramEnabled, 
+    alertConfig.emailEnabled, 
+    alertConfig.discordEnabled, 
+    alertConfig.threshold
+  ])
 
   // Auto-save interval
   useEffect(() => {
