@@ -63,6 +63,8 @@ export default function Home() {
   })
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const alertedRef = useRef<Set<string>>(new Set())
+  const prevChannelsRef = useRef({ telegram: false, email: false, discord: false })
+  const [lastAlertInfo, setLastAlertInfo] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -178,6 +180,8 @@ export default function Home() {
         if (matched == null) continue
         const key = `${sym}-${tf}-${pred.direction}-${matched}-${window30m}`
         alertedRef.current.add(key)
+        const dirLabel = pred.direction === 'up' ? 'ขึ้น' : 'ลง'
+        setLastAlertInfo(`${sym.replace('USDT','')} ${tf} ${dirLabel} ${pred.confidence.toFixed(1)}% → ${channels.join('+')} @ ${new Date().toLocaleTimeString()}`)
         fetch('/api/alert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -199,6 +203,23 @@ export default function Home() {
     alertConfig.discordEnabled,
     alertConfig.thresholds,
   ])
+
+  // Clear alertedRef when a channel is newly enabled, so it fires immediately
+  useEffect(() => {
+    const prev = prevChannelsRef.current
+    const anyNewlyEnabled =
+      (!prev.telegram && alertConfig.telegramEnabled) ||
+      (!prev.email    && alertConfig.emailEnabled) ||
+      (!prev.discord  && alertConfig.discordEnabled)
+    if (anyNewlyEnabled) {
+      alertedRef.current.clear()
+    }
+    prevChannelsRef.current = {
+      telegram: alertConfig.telegramEnabled,
+      email:    alertConfig.emailEnabled,
+      discord:  alertConfig.discordEnabled,
+    }
+  }, [alertConfig.telegramEnabled, alertConfig.emailEnabled, alertConfig.discordEnabled])
 
   // Auto-save interval
   useEffect(() => {
@@ -246,6 +267,18 @@ export default function Home() {
               className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg text-gray-300 transition-colors">
               Refresh
             </button>
+            {(alertConfig.telegramEnabled || alertConfig.emailEnabled || alertConfig.discordEnabled) && (
+              <button
+                onClick={() => {
+                  alertedRef.current.clear()
+                  fetchData().then((d) => { if (d) triggerAlerts(d) })
+                }}
+                className="text-xs bg-indigo-900/60 hover:bg-indigo-800 px-3 py-1.5 rounded-lg text-indigo-300 transition-colors border border-indigo-700"
+                title="Clear dedup cache and re-check alerts now"
+              >
+                🔔 Force Alert
+              </button>
+            )}
           </div>
         </div>
 
@@ -262,6 +295,32 @@ export default function Home() {
           {alertConfig.discordEnabled && <span className="text-xs bg-indigo-900/40 text-indigo-400 px-2 py-1 rounded-full">Discord ≥{alertConfig.thresholds.join('/')}%</span>}
           {!supabaseEnabled && <div className="ml-auto text-xs text-yellow-600 bg-yellow-900/30 px-3 py-2 rounded-xl">Supabase not configured</div>}
         </div>
+
+        {/* Alert status row */}
+        {(alertConfig.telegramEnabled || alertConfig.emailEnabled || alertConfig.discordEnabled) && alertConfig.thresholds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 mb-3 text-xs">
+            <span className="text-gray-600">Alert status:</span>
+            {SYMBOLS.map((sym) => {
+              const d = data[sym]
+              if (!d) return null
+              return (['10m', '30m'] as const).map((tf) => {
+                const conf = d.predictions[tf].confidence
+                const dir = d.predictions[tf].direction
+                const minT = Math.min(...alertConfig.thresholds)
+                const hit = conf >= minT
+                return (
+                  <span key={`${sym}-${tf}`}
+                    className={`px-2 py-0.5 rounded-full border ${hit ? 'bg-green-900/40 border-green-700 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-500'}`}>
+                    {sym.replace('USDT','')} {tf} {dir === 'up' ? '▲' : '▼'} {conf.toFixed(0)}%{hit ? ' ✓' : ` (need ${minT}%)`}
+                  </span>
+                )
+              })
+            })}
+            {lastAlertInfo && (
+              <span className="text-indigo-400 ml-auto">Last sent: {lastAlertInfo}</span>
+            )}
+          </div>
+        )}
 
         {/* Alert Settings */}
         <div className="mb-5">

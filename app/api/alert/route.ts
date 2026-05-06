@@ -6,38 +6,54 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
   const body: AlertPayload & { skipDedupe?: boolean; channels?: string[] } = await req.json()
-  const channels = body.channels ?? ['telegram', 'email']
+  const channels = body.channels ?? ['telegram', 'email', 'discord']
+  const isTest = body.skipDedupe === true
 
-  // Deduplicate: don't send same symbol+timeframe+direction within 30 min
-  if (!body.skipDedupe) {
+  // Server-side dedup (only for real alerts, not tests)
+  // Deduplicates per channel independently so testing one channel doesn't block another
+  if (!isTest) {
     try {
       const db = getSupabaseAdmin()
       const since = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-      const { data } = await db
-        .from('alerts')
-        .select('id')
-        .eq('symbol', body.symbol)
-        .eq('timeframe', body.timeframe)
-        .eq('direction', body.direction)
-        .gte('sent_at', since)
-        .limit(1)
 
-      if (data && data.length > 0) {
-        return NextResponse.json({ sent: false, reason: 'duplicate within 30min' })
+      const blockedChannels = new Set<string>()
+      for (const ch of channels) {
+        const { data } = await db
+          .from('alerts')
+          .select('id')
+          .eq('symbol', body.symbol)
+          .eq('timeframe', body.timeframe)
+          .eq('direction', body.direction)
+          .ilike('channel', `%${ch}%`)
+          .gte('sent_at', since)
+          .limit(1)
+        if (data && data.length > 0) blockedChannels.add(ch)
       }
-    } catch {}
+
+      const remaining = channels.filter((c) => !blockedChannels.has(c))
+      if (remaining.length === 0) {
+        return NextResponse.json({ sent: false, reason: 'duplicate within 30min', blocked: [...blockedChannels] })
+      }
+      // Only send on non-blocked channels
+      body.channels = remaining
+    } catch {
+      // If alerts table doesn't exist, skip server dedup
+    }
   }
+
+  const activeChannels = isTest ? channels : (body.channels ?? channels)
 
   // Send all channels in parallel
   const [telegramSent, emailSent, discordSent] = await Promise.all([
-    channels.includes('telegram') ? sendTelegramAlert(body) : Promise.resolve(false),
-    channels.includes('email')    ? sendEmailAlert(body)    : Promise.resolve(false),
-    channels.includes('discord')  ? sendDiscordAlert(body)  : Promise.resolve(false),
+    activeChannels.includes('telegram') ? sendTelegramAlert(body) : Promise.resolve(false),
+    activeChannels.includes('email')    ? sendEmailAlert(body)    : Promise.resolve(false),
+    activeChannels.includes('discord')  ? sendDiscordAlert(body)  : Promise.resolve(false),
   ])
 
   const anySent = telegramSent || emailSent || discordSent
 
-  if (anySent) {
+  // Only log to DB for real alerts (not tests), so tests don't pollute the dedup table
+  if (anySent && !isTest) {
     try {
       const db = getSupabaseAdmin()
       const channelList = [
@@ -55,5 +71,11 @@ export async function POST(req: NextRequest) {
     } catch {}
   }
 
-  return NextResponse.json({ sent: anySent, telegram: telegramSent, email: emailSent, discord: discordSent })
+  return NextResponse.json({
+    sent: anySent,
+    telegram: telegramSent,
+    email: emailSent,
+    discord: discordSent,
+    test: isTest,
+  })
 }
