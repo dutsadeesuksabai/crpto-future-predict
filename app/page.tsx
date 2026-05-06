@@ -15,6 +15,10 @@ import { AnomalyAlert } from '@/components/AnomalyAlert'
 import { BacktestPanel } from '@/components/BacktestPanel'
 import { CalibrationPanel } from '@/components/CalibrationPanel'
 import { AlertSettings, type AlertConfig } from '@/components/AlertSettings'
+import { TradeSetupPanel } from '@/components/TradeSetupPanel'
+import { PivotPanel } from '@/components/PivotPanel'
+import { KeyboardHelpOverlay } from '@/components/KeyboardHelpOverlay'
+import { useKeyboard } from '@/hooks/useKeyboard'
 import type { TickerPrice, Kline } from '@/lib/mexc'
 import type { PredictionResult } from '@/lib/predictor'
 import type { IndicatorSet } from '@/lib/indicators'
@@ -24,6 +28,8 @@ import type { MTFConsensus } from '@/lib/multitimeframe'
 import type { FearGreedData } from '@/lib/feargreed'
 import type { AnomalyResult } from '@/lib/anomaly'
 import type { Prediction } from '@/lib/supabase'
+import type { LevelData } from '@/lib/levels'
+import type { TradeSetup } from '@/lib/targets'
 
 type SymbolData = {
   ticker: TickerPrice
@@ -35,6 +41,8 @@ type SymbolData = {
   multiTimeframe: MTFConsensus | null
   fearGreed: FearGreedData | null
   anomaly: AnomalyResult
+  levels: LevelData | null
+  tradeSetup: { '10m': TradeSetup; '30m': TradeSetup } | null
   alerts: { '10m': boolean; '30m': boolean; threshold: number }
   timestamp: number
 }
@@ -61,6 +69,9 @@ export default function Home() {
     autoSave: false,
     autoSaveIntervalMin: 5,
   })
+  const [showTradeSetup, setShowTradeSetup] = useState(false)
+  const [showPivots, setShowPivots] = useState(false)
+  const [showKeyHelp, setShowKeyHelp] = useState(false)
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const alertedRef = useRef<Set<string>>(new Set())
   const prevChannelsRef = useRef({ telegram: false, email: false, discord: false })
@@ -264,8 +275,23 @@ export default function Home() {
 
   const currentData = data[activeSymbol]
 
+  // ── Keyboard Shortcuts ──────────────────────────────────────────────────────
+  useKeyboard({
+    'r':      () => fetchData().then((d) => { if (d) triggerAlerts(d) }),
+    'b':      () => setActiveSymbol('BTCUSDT'),
+    'e':      () => setActiveSymbol('ETHUSDT'),
+    's':      () => { savePrediction(activeSymbol, '10m'); savePrediction(activeSymbol, '30m') },
+    'f':      () => { alertedRef.current.clear(); fetchData().then((d) => { if (d) triggerAlerts(d) }) },
+    'a':      () => {},  // AlertSettings manages its own open state
+    't':      () => setShowTradeSetup((v) => !v),
+    'p':      () => setShowPivots((v) => !v),
+    '?':      () => setShowKeyHelp((v) => !v),
+    'escape': () => setShowKeyHelp(false),
+  })
+
   return (
     <main className="min-h-screen bg-gray-950 text-white p-4 md:p-6">
+      <KeyboardHelpOverlay open={showKeyHelp} onClose={() => setShowKeyHelp(false)} />
       <div className="max-w-7xl mx-auto">
 
         {/* Header */}
@@ -274,25 +300,47 @@ export default function Home() {
             <h1 className="text-2xl font-black text-white">Crypto Predictor</h1>
             <p className="text-gray-500 text-sm">BTC &amp; ETH · 10m/30m · MEXC · {SYMBOLS.length * 2 + 6} signals</p>
           </div>
-          <div className="flex items-center gap-3">
-            {lastUpdate && <span className="text-gray-600 text-xs">Updated {lastUpdate.toLocaleTimeString()}</span>}
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            {lastUpdate && <span className="text-gray-600 text-xs hidden sm:block">Updated {lastUpdate.toLocaleTimeString()}</span>}
             <div className={`w-2 h-2 rounded-full ${loading ? 'bg-yellow-400 animate-pulse' : error ? 'bg-red-400' : 'bg-green-400'}`} />
             <button onClick={() => fetchData().then((d) => { if (d) triggerAlerts(d) })}
-              className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg text-gray-300 transition-colors">
-              Refresh
+              className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg text-gray-300 transition-colors"
+              title="Refresh [R]">
+              ↻ Refresh
+            </button>
+            <button onClick={() => setShowTradeSetup((v) => !v)}
+              className={`text-xs px-3 py-1.5 rounded-lg transition-colors border ${showTradeSetup ? 'bg-emerald-900/60 text-emerald-300 border-emerald-700' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}
+              title="Trade Setup [T]">
+              📐 Setup
+            </button>
+            <button onClick={() => setShowPivots((v) => !v)}
+              className={`text-xs px-3 py-1.5 rounded-lg transition-colors border ${showPivots ? 'bg-blue-900/60 text-blue-300 border-blue-700' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}
+              title="Pivot Points [P]">
+              📊 Pivots
+            </button>
+            <button onClick={() => window.open(`/api/signal?symbol=${activeSymbol}&pretty=true`, '_blank')}
+              className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg text-gray-400 transition-colors border border-gray-700"
+              title="Open public JSON API">
+              🔗 API
+            </button>
+            <button onClick={() => window.location.href = `/api/export?symbol=${activeSymbol}`}
+              className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg text-gray-400 transition-colors border border-gray-700"
+              title="Download CSV">
+              ⬇ CSV
             </button>
             {(alertConfig.telegramEnabled || alertConfig.emailEnabled || alertConfig.discordEnabled) && (
               <button
-                onClick={() => {
-                  alertedRef.current.clear()
-                  fetchData().then((d) => { if (d) triggerAlerts(d) })
-                }}
+                onClick={() => { alertedRef.current.clear(); fetchData().then((d) => { if (d) triggerAlerts(d) }) }}
                 className="text-xs bg-indigo-900/60 hover:bg-indigo-800 px-3 py-1.5 rounded-lg text-indigo-300 transition-colors border border-indigo-700"
-                title="Clear dedup cache and re-check alerts now"
-              >
+                title="Force alert check [F]">
                 🔔 Force Alert
               </button>
             )}
+            <button onClick={() => setShowKeyHelp(true)}
+              className="text-xs bg-gray-800 hover:bg-gray-700 px-2.5 py-1.5 rounded-lg text-gray-500 transition-colors border border-gray-700"
+              title="Keyboard shortcuts [?]">
+              ⌨️
+            </button>
           </div>
         </div>
 
@@ -374,6 +422,24 @@ export default function Home() {
                 prediction10m={currentData.predictions['10m']}
                 prediction30m={currentData.predictions['30m']} />
             </div>
+
+            {/* Trade Setup (toggleable) */}
+            {showTradeSetup && currentData.tradeSetup && (
+              <div className="mb-4">
+                <TradeSetupPanel
+                  setup10m={currentData.tradeSetup['10m']}
+                  setup30m={currentData.tradeSetup['30m']}
+                  currentPrice={currentData.ticker.price}
+                />
+              </div>
+            )}
+
+            {/* Pivot Points (toggleable) */}
+            {showPivots && currentData.levels && (
+              <div className="mb-4">
+                <PivotPanel levels={currentData.levels} currentPrice={currentData.ticker.price} />
+              </div>
+            )}
 
             {/* Row 2: MTF Consensus + Order Book + Funding Rate */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
