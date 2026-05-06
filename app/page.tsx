@@ -169,19 +169,31 @@ export default function Home() {
       if (!d) continue
       for (const tf of ['10m', '30m'] as const) {
         const pred = d.predictions[tf]
-        // find the highest matching threshold that hasn't fired this window
+        const quality = pred.signalQuality ?? 0
+
+        // Gate 1: signal quality must be ≥ 70 (pure/clean only, no noisy signals)
+        if (quality < 70) continue
+
+        // Gate 2: quality tier bucket (Pure=80+, Clean=70-79) — each tier fires once per 30m window
+        const qualityTier = quality >= 80 ? 'pure' : 'clean'
+
+        // Gate 3: find the highest selected confidence threshold that matches & hasn't fired
         const matched = [...alertConfig.thresholds]
           .sort((a, b) => b - a)
           .find((t) => {
             if (pred.confidence < t) return false
-            const key = `${sym}-${tf}-${pred.direction}-${t}-${window30m}`
+            const key = `${sym}-${tf}-${pred.direction}-${qualityTier}-${t}-${window30m}`
             return !alertedRef.current.has(key)
           })
         if (matched == null) continue
-        const key = `${sym}-${tf}-${pred.direction}-${matched}-${window30m}`
+
+        const key = `${sym}-${tf}-${pred.direction}-${qualityTier}-${matched}-${window30m}`
         alertedRef.current.add(key)
+
         const dirLabel = pred.direction === 'up' ? 'ขึ้น' : 'ลง'
-        setLastAlertInfo(`${sym.replace('USDT','')} ${tf} ${dirLabel} ${pred.confidence.toFixed(1)}% → ${channels.join('+')} @ ${new Date().toLocaleTimeString()}`)
+        const qLabel   = quality >= 80 ? '🟣 Pure' : '🟢 Clean'
+        setLastAlertInfo(`${qLabel} ${sym.replace('USDT','')} ${tf} ${dirLabel} ${pred.confidence.toFixed(1)}% Q${quality} → ${channels.join('+')} @ ${new Date().toLocaleTimeString()}`)
+
         fetch('/api/alert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -192,6 +204,8 @@ export default function Home() {
             price: d.ticker.price,
             bullScore: pred.bullScore,
             bearScore: pred.bearScore,
+            signalQuality: quality,
+            filters: pred.filters,
             channels,
           }),
         }).catch(() => {})

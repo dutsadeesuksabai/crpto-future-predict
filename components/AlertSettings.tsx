@@ -15,7 +15,7 @@ interface Props {
   onConfigChange: (cfg: AlertConfig) => void
 }
 
-const THRESHOLD_OPTIONS = [70, 75, 80, 90] as const
+const THRESHOLD_OPTIONS = [60, 70, 75, 80, 90] as const
 
 const DEFAULT: AlertConfig = {
   telegramEnabled: false,
@@ -39,10 +39,11 @@ function Toggle({ on, onToggle, color = 'bg-green-600' }: { on: boolean; onToggl
 }
 
 function tierLabel(t: number) {
-  if (t >= 90) return { label: 'Ultra', color: 'bg-green-700 text-white border-green-600' }
+  if (t >= 90) return { label: 'Ultra',  color: 'bg-green-700 text-white border-green-600' }
   if (t >= 80) return { label: 'Strong', color: 'bg-amber-700 text-white border-amber-600' }
-  if (t >= 75) return { label: 'Good', color: 'bg-emerald-700 text-white border-emerald-600' }
-  return { label: 'Normal', color: 'bg-gray-700 text-gray-200 border-gray-600' }
+  if (t >= 75) return { label: 'Good',   color: 'bg-emerald-700 text-white border-emerald-600' }
+  if (t >= 70) return { label: 'Normal', color: 'bg-gray-700 text-gray-200 border-gray-600' }
+  return { label: 'Low', color: 'bg-gray-800 text-gray-400 border-gray-700' }
 }
 
 export function AlertSettings({ onConfigChange }: Props) {
@@ -153,7 +154,8 @@ export function AlertSettings({ onConfigChange }: Props) {
           {/* Alert thresholds — multi-select */}
           {activeCount > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-2">Alert when confidence reaches (select multiple)</div>
+              <div className="text-xs text-gray-500 mb-1">Alert when confidence reaches (select multiple)</div>
+              <div className="text-xs text-purple-400/80 mb-2">⚡ Requires Signal Quality ≥ 70 (Pure/Clean only)</div>
               <div className="flex items-center gap-2 flex-wrap">
                 {THRESHOLD_OPTIONS.map((t) => {
                   const { label, color } = tierLabel(t)
