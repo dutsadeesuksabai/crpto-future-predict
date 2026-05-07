@@ -60,3 +60,32 @@ CREATE INDEX IF NOT EXISTS idx_alerts_symbol_tf ON alerts(symbol, timeframe, dir
 
 ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for anon" ON alerts FOR ALL USING (true) WITH CHECK (true);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Backtest simulation results (optional — run if you want persistent history)
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS backtest_runs (
+  id              uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  symbol          VARCHAR(20)  NOT NULL,
+  strategy_id     VARCHAR(50)  NOT NULL,
+  timeframe_min   INT          NOT NULL,   -- 10 or 30
+  period_days     DECIMAL(4,2) NOT NULL,
+  total           INT,
+  correct         INT,
+  accuracy        DECIMAL(5,2),
+  avg_confidence  DECIMAL(5,2),
+  avg_quality     DECIMAL(5,2),
+  total_pnl_pct   DECIMAL(10,4),
+  sharpe          DECIMAL(8,4),
+  max_drawdown    DECIMAL(10,4),
+  profit_factor   DECIMAL(8,4),
+  summary         JSONB DEFAULT '{}',      -- full summary stats
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_symbol ON backtest_runs(symbol);
+CREATE INDEX IF NOT EXISTS idx_backtest_strategy ON backtest_runs(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_backtest_created ON backtest_runs(created_at DESC);
+
+ALTER TABLE backtest_runs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for anon" ON backtest_runs FOR ALL USING (true) WITH CHECK (true);

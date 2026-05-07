@@ -12,7 +12,7 @@ import { FundingRatePanel } from '@/components/FundingRatePanel'
 import { MultitimeframePanel } from '@/components/MultitimeframePanel'
 import { FearGreedWidget } from '@/components/FearGreedWidget'
 import { AnomalyAlert } from '@/components/AnomalyAlert'
-import { BacktestPanel } from '@/components/BacktestPanel'
+import { BacktestRunnerPanel } from '@/components/BacktestRunnerPanel'
 import { CalibrationPanel } from '@/components/CalibrationPanel'
 import { AlertSettings, type AlertConfig } from '@/components/AlertSettings'
 import { TradeSetupPanel } from '@/components/TradeSetupPanel'
@@ -521,13 +521,17 @@ export default function Home() {
               }
             </div>
 
-            {/* Row 4: Backtest + Calibration/Signal Health */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <BacktestPanel symbol={activeSymbol} />
+            {/* Row 4: Calibration/Signal Health */}
+            <div className="mb-4">
               <CalibrationPanel symbol={activeSymbol} />
             </div>
 
-            {/* Row 5: Accuracy Stats + Prediction History */}
+            {/* Row 5: Backtest & Analysis (simulation + live tracking) */}
+            <div className="mb-4">
+              <BacktestRunnerPanel symbol={activeSymbol} />
+            </div>
+
+            {/* Row 6: Accuracy Stats + Prediction History */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <AccuracyStats stats={stats} />
               <PredictionHistory predictions={predictions.filter((p) => p.symbol === activeSymbol)} />
