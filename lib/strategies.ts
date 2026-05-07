@@ -198,6 +198,136 @@ export const STRATEGIES: Strategy[] = [
     maxConfidence: 85,
     consensusMin: 0.57,
   },
+
+  // ── 8. Momentum Blast ───────────────────────────────────────────────────────
+  // Pure momentum play: Volume spike + strong candle + VWAP above = continuation.
+  // Completely ignores oscillator reversal signals — designed for 10m scalp
+  {
+    id: 'momentum_blast',
+    name: 'Momentum Blast',
+    emoji: '🚀',
+    tag: '10m Momentum',
+    description: 'ไม่สนใจ RSI/BB ใช้แค่ Volume spike + Candle body + VWAP — ตาม momentum',
+    accentColor: '#f43f5e',
+    weightMult: {
+      oscillators: 0.05,   // virtually zero — RSI/BB/StochRSI ignored
+      trend: 0.5,          // MACD slow for 10m
+      volume: 4.0,         // KING — volume is the signal
+      momentum: 4.5,       // KING — raw price momentum
+      vwap: 3.0,           // VWAP cross = strong institutional signal
+      divergence: 0.05,    // divergence = contrarian, ignore for momentum
+      fundingRate: 0.2,
+      fearGreed: 0.0,
+      mtf: 0.4,
+    },
+    confidenceAdj: 0,
+    maxConfidence: 87,
+    consensusMin: 0.65,
+  },
+
+  // ── 9. Strict Consensus ─────────────────────────────────────────────────────
+  // Only fires when 75%+ of weighted signals agree. Very few signals but cleaner.
+  // Balanced weights — just requires much stricter agreement
+  {
+    id: 'strict_consensus',
+    name: 'Strict Consensus',
+    emoji: '🎯',
+    tag: 'High Precision',
+    description: 'ต้องการ 75%+ ของ signal ตรงกัน — ออก signal น้อย แต่แม่นยำกว่า',
+    accentColor: '#0ea5e9',
+    weightMult: {
+      oscillators: 1.0,
+      trend: 1.2,
+      volume: 1.2,
+      momentum: 1.2,
+      vwap: 1.3,
+      divergence: 1.5,
+      fundingRate: 0.8,
+      fearGreed: 0.4,
+      mtf: 2.0,
+    },
+    confidenceAdj: -6,     // very hard to reach high confidence
+    maxConfidence: 82,
+    consensusMin: 0.75,    // the key: need 75% weighted agreement
+  },
+
+  // ── 10. Trend Burst ──────────────────────────────────────────────────────────
+  // Extreme trend following: only MACD + EMA + MTF matter.
+  // Designed for markets in clear up/down trend — filters ranging noise
+  {
+    id: 'trend_burst',
+    name: 'Trend Burst',
+    emoji: '🌪️',
+    tag: 'Strong Trend',
+    description: 'เชื่อ MACD + EMA + MTF เท่านั้น — ผลดีเฉพาะตลาดที่ trend ชัด',
+    accentColor: '#22d3ee',
+    weightMult: {
+      oscillators: 0.08,   // almost zero — RSI/BB are contrarian, useless in trend
+      trend: 4.0,          // KING — MACD + EMA Cross dominate
+      volume: 1.8,         // volume confirms trend
+      momentum: 2.5,       // momentum in trend direction
+      vwap: 0.8,
+      divergence: 0.1,     // divergence = counter-trend signal, ignore
+      fundingRate: 0.3,
+      fearGreed: 0.1,
+      mtf: 4.0,            // MTF consensus = highest weight
+    },
+    confidenceAdj: 2,
+    maxConfidence: 93,
+    consensusMin: 0.62,
+  },
+
+  // ── 11. Reversal Hunter ──────────────────────────────────────────────────────
+  // For mean-reversion plays: extreme RSI + divergence + BB extremes.
+  // Best for 30m timeframe when price hits overbought/oversold levels
+  {
+    id: 'reversal_hunter',
+    name: 'Reversal Hunter',
+    emoji: '🎣',
+    tag: '30m Reversal',
+    description: 'ใช้ RSI extreme + Divergence + BB lower/upper — สำหรับ 30m reversal',
+    accentColor: '#fb923c',
+    weightMult: {
+      oscillators: 4.0,    // KING — RSI/BB/StochRSI at extremes = reversal signal
+      trend: 0.05,         // completely ignore trend
+      volume: 0.3,         // lower volume = exhaustion, which is good for reversal
+      momentum: 0.05,      // momentum works against us in reversal
+      vwap: 2.5,           // price far from VWAP = reversion target
+      divergence: 5.0,     // KING — divergence is the best reversal signal
+      fundingRate: 2.0,    // extreme funding = crowded position = reversal coming
+      fearGreed: 2.0,      // extreme fear/greed = reversal
+      mtf: 0.1,
+    },
+    confidenceAdj: 0,
+    maxConfidence: 85,
+    consensusMin: 0.60,
+  },
+
+  // ── 12. Smart Adaptive ──────────────────────────────────────────────────────
+  // Balanced but weights MTF + Divergence + Volume more — more "informed" signals
+  // compared to pure Balanced. Better calibrated for live conditions.
+  {
+    id: 'smart_adaptive',
+    name: 'Smart Adaptive',
+    emoji: '🧠',
+    tag: 'Best Overall',
+    description: 'ปรับสมดุล MTF + Divergence + Volume + Strict consensus — ผลดีทุกสภาวะ',
+    accentColor: '#8b5cf6',
+    weightMult: {
+      oscillators: 0.8,
+      trend: 1.4,
+      volume: 1.8,
+      momentum: 1.6,
+      vwap: 1.8,
+      divergence: 2.0,
+      fundingRate: 1.0,
+      fearGreed: 0.5,
+      mtf: 2.5,
+    },
+    confidenceAdj: -2,
+    maxConfidence: 90,
+    consensusMin: 0.65,
+  },
 ]
 
 export const DEFAULT_STRATEGY = STRATEGIES[0]
