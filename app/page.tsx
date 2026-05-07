@@ -18,10 +18,12 @@ import { AlertSettings, type AlertConfig } from '@/components/AlertSettings'
 import { TradeSetupPanel } from '@/components/TradeSetupPanel'
 import { PivotPanel } from '@/components/PivotPanel'
 import { KeyboardHelpOverlay } from '@/components/KeyboardHelpOverlay'
+import { StrategySelector } from '@/components/StrategySelector'
 import { useKeyboard } from '@/hooks/useKeyboard'
 import type { TickerPrice, Kline } from '@/lib/mexc'
-import type { PredictionResult } from '@/lib/predictor'
+import { predict, type PredictionResult } from '@/lib/predictor'
 import type { IndicatorSet } from '@/lib/indicators'
+import { DEFAULT_STRATEGY, type Strategy } from '@/lib/strategies'
 import type { OrderBookData } from '@/lib/orderbook'
 import type { FundingData } from '@/lib/funding'
 import type { MTFConsensus } from '@/lib/multitimeframe'
@@ -43,6 +45,7 @@ type SymbolData = {
   anomaly: AnomalyResult
   levels: LevelData | null
   tradeSetup: { '10m': TradeSetup; '30m': TradeSetup } | null
+  extraScores: { orderBook: number; fundingRate: number; fearGreed: number; mtfConsensus?: number }
   alerts: { '10m': boolean; '30m': boolean; threshold: number }
   timestamp: number
 }
@@ -69,6 +72,8 @@ export default function Home() {
     autoSave: false,
     autoSaveIntervalMin: 5,
   })
+  const [selectedStrategy, setSelectedStrategy] = useState<Strategy>(DEFAULT_STRATEGY)
+  const [showStrategySelector, setShowStrategySelector] = useState(false)
   const [showTradeSetup, setShowTradeSetup] = useState(false)
   const [showPivots, setShowPivots] = useState(false)
   const [showKeyHelp, setShowKeyHelp] = useState(false)
@@ -134,7 +139,11 @@ export default function Home() {
     if (!d) return
 
     if (!auto) setSaving((s) => ({ ...s, [key]: true }))
-    const pred = d.predictions[timeframe]
+    // Use strategy-recomputed prediction if available
+    const extra = d.extraScores
+    const pred = extra
+      ? predict(d.indicators[timeframe === '10m' ? '1m' : '5m'], extra, selectedStrategy)
+      : d.predictions[timeframe]
     const mins = timeframe === '10m' ? 10 : 30
     try {
       const res = await fetch('/api/predictions', {
@@ -155,6 +164,7 @@ export default function Home() {
             momentum: d.indicators['1m'].momentum,
             ob_imbalance: d.orderBook?.imbalance,
             funding_rate: d.fundingRate?.fundingRatePct,
+            strategy_id: pred.strategyId,
           },
         }),
       })
@@ -162,7 +172,7 @@ export default function Home() {
       fetchPredictions()
     } catch {}
     if (!auto) setSaving((s) => ({ ...s, [key]: false }))
-  }, [saving, saved, supabaseEnabled, data, fetchPredictions])
+  }, [saving, saved, supabaseEnabled, data, fetchPredictions, selectedStrategy])
 
   const triggerAlerts = useCallback(async (newData: Record<string, SymbolData>) => {
     const channels = [
@@ -179,7 +189,11 @@ export default function Home() {
       const d = newData[sym]
       if (!d) continue
       for (const tf of ['10m', '30m'] as const) {
-        const pred = d.predictions[tf]
+        // Use strategy-recomputed prediction if extraScores available
+        const extra = d.extraScores
+        const pred = extra
+          ? predict(d.indicators[tf === '10m' ? '1m' : '5m'], extra, selectedStrategy)
+          : d.predictions[tf]
         const quality = pred.signalQuality ?? 0
 
         // Gate 1: signal quality must be ≥ 70 (pure/clean only, no noisy signals)
@@ -227,6 +241,7 @@ export default function Home() {
     alertConfig.emailEnabled,
     alertConfig.discordEnabled,
     alertConfig.thresholds,
+    selectedStrategy,
   ])
 
   // Clear alertedRef when a channel is newly enabled, so it fires immediately
@@ -275,6 +290,23 @@ export default function Home() {
 
   const currentData = data[activeSymbol]
 
+  /** Re-compute predictions with the selected strategy (client-side, pure function) */
+  const applyStrategy = (d: SymbolData, strat: Strategy) => {
+    const extra = {
+      orderBook:    d.extraScores.orderBook,
+      fundingRate:  d.extraScores.fundingRate,
+      fearGreed:    d.extraScores.fearGreed,
+      mtfConsensus: d.extraScores.mtfConsensus,
+    }
+    return {
+      '10m': predict(d.indicators['1m'], extra, strat),
+      '30m': predict(d.indicators['5m'], extra, strat),
+    } as { '10m': PredictionResult; '30m': PredictionResult }
+  }
+
+  // Predictions recalculated with selected strategy (overrides server-side predictions)
+  const currentPredictions = currentData ? applyStrategy(currentData, selectedStrategy) : null
+
   // ── Keyboard Shortcuts ──────────────────────────────────────────────────────
   useKeyboard({
     'r':      () => fetchData().then((d) => { if (d) triggerAlerts(d) }),
@@ -283,10 +315,11 @@ export default function Home() {
     's':      () => { savePrediction(activeSymbol, '10m'); savePrediction(activeSymbol, '30m') },
     'f':      () => { alertedRef.current.clear(); fetchData().then((d) => { if (d) triggerAlerts(d) }) },
     'a':      () => {},  // AlertSettings manages its own open state
+    'g':      () => setShowStrategySelector((v) => !v),
     't':      () => setShowTradeSetup((v) => !v),
     'p':      () => setShowPivots((v) => !v),
     '?':      () => setShowKeyHelp((v) => !v),
-    'escape': () => setShowKeyHelp(false),
+    'escape': () => { setShowKeyHelp(false); setShowStrategySelector(false) },
   })
 
   return (
@@ -307,6 +340,15 @@ export default function Home() {
               className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg text-gray-300 transition-colors"
               title="Refresh [R]">
               ↻ Refresh
+            </button>
+            <button
+              onClick={() => setShowStrategySelector((v) => !v)}
+              className="text-xs px-3 py-1.5 rounded-lg transition-colors border"
+              style={showStrategySelector
+                ? { background: `${selectedStrategy.accentColor}22`, color: selectedStrategy.accentColor, borderColor: selectedStrategy.accentColor }
+                : { background: 'rgba(31,41,55,1)', color: '#9ca3af', borderColor: 'rgba(55,65,81,1)' }}
+              title="Strategy Selector [G]">
+              {selectedStrategy.emoji} {selectedStrategy.name}
             </button>
             <button onClick={() => setShowTradeSetup((v) => !v)}
               className={`text-xs px-3 py-1.5 rounded-lg transition-colors border ${showTradeSetup ? 'bg-emerald-900/60 text-emerald-300 border-emerald-700' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}
@@ -352,6 +394,11 @@ export default function Home() {
               {sym.replace('USDT', '/USDT')}
             </button>
           ))}
+          <span
+            className="text-xs px-2 py-1 rounded-full"
+            style={{ background: `${selectedStrategy.accentColor}22`, color: selectedStrategy.accentColor }}>
+            {selectedStrategy.emoji} {selectedStrategy.name}
+          </span>
           {alertConfig.autoSave && <span className="text-xs bg-blue-900/40 text-blue-400 px-2 py-1 rounded-full">Auto-save every {alertConfig.autoSaveIntervalMin}m</span>}
           {alertConfig.telegramEnabled && <span className="text-xs bg-green-900/40 text-green-400 px-2 py-1 rounded-full">Telegram ≥{alertConfig.thresholds.join('/')}%</span>}
           {alertConfig.discordEnabled && <span className="text-xs bg-indigo-900/40 text-indigo-400 px-2 py-1 rounded-full">Discord ≥{alertConfig.thresholds.join('/')}%</span>}
@@ -385,9 +432,16 @@ export default function Home() {
         )}
 
         {/* Alert Settings */}
-        <div className="mb-5">
+        <div className="mb-3">
           <AlertSettings onConfigChange={setAlertConfig} />
         </div>
+
+        {/* Strategy Selector */}
+        {showStrategySelector && (
+          <div className="mb-5">
+            <StrategySelector selected={selectedStrategy} onChange={(s) => { setSelectedStrategy(s); setShowStrategySelector(false) }} />
+          </div>
+        )}
 
         {error && <div className="bg-red-900/30 border border-red-800 text-red-400 text-sm rounded-xl px-4 py-3 mb-4">Error: {error}</div>}
 
@@ -405,11 +459,11 @@ export default function Home() {
             {/* Row 1: Price + Predictions */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <PriceCard ticker={currentData.ticker} />
-              <PredictionCard timeframe="10m" prediction={currentData.predictions['10m']} symbol={activeSymbol}
+              <PredictionCard timeframe="10m" prediction={currentPredictions?.['10m'] ?? currentData.predictions['10m']} symbol={activeSymbol}
                 currentPrice={currentData.ticker.price}
                 onSave={() => savePrediction(activeSymbol, '10m')}
                 saving={saving[`${activeSymbol}-10m`]} saved={saved[`${activeSymbol}-10m`]} />
-              <PredictionCard timeframe="30m" prediction={currentData.predictions['30m']} symbol={activeSymbol}
+              <PredictionCard timeframe="30m" prediction={currentPredictions?.['30m'] ?? currentData.predictions['30m']} symbol={activeSymbol}
                 currentPrice={currentData.ticker.price}
                 onSave={() => savePrediction(activeSymbol, '30m')}
                 saving={saving[`${activeSymbol}-30m`]} saved={saved[`${activeSymbol}-30m`]} />
@@ -419,8 +473,8 @@ export default function Home() {
             <div className="mb-4">
               <MiniChart klines={currentData.klines} height={160}
                 indicators={currentData.indicators['1m']}
-                prediction10m={currentData.predictions['10m']}
-                prediction30m={currentData.predictions['30m']} />
+                prediction10m={currentPredictions?.['10m'] ?? currentData.predictions['10m']}
+                prediction30m={currentPredictions?.['30m'] ?? currentData.predictions['30m']} />
             </div>
 
             {/* Trade Setup (toggleable) */}

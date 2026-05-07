@@ -84,6 +84,12 @@ export async function GET(req: NextRequest) {
         dailyOpen:  todayD.open,
       },
       tradeSetup,
+      extraScores: {
+        orderBook:    obScore,
+        fundingRate:  frScore,
+        fearGreed:    fgScore,
+        mtfConsensus: mtfScore,
+      },
       alerts: { '10m': pred10m.confidence >= alertThreshold, '30m': pred30m.confidence >= alertThreshold, threshold: alertThreshold },
       timestamp: Date.now(),
     })

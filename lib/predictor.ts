@@ -1,4 +1,5 @@
 import type { IndicatorSet } from './indicators'
+import type { Strategy } from './strategies'
 
 export type Signal = {
   name: string
@@ -29,6 +30,7 @@ export type PredictionResult = {
   consensusRatio: number   // 0-1: fraction of weighted signals agreeing
   adxStrength: number      // ADX value (trend strength)
   filters: PredictionFilters
+  strategyId: string       // which strategy produced this prediction
 }
 
 export type ExtraSignals = {
@@ -69,7 +71,14 @@ function curveConfidence(bullScore: number): number {
   return 50 + curved * 45                   // 50-95
 }
 
-export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): PredictionResult {
+export function predict(ind: IndicatorSet, extra: ExtraSignals = {}, strategy?: Strategy): PredictionResult {
+
+  // ── STRATEGY WEIGHT MULTIPLIERS ─────────────────────────────────────────────
+  const wm = strategy?.weightMult ?? {
+    oscillators: 1, trend: 1, volume: 1, momentum: 1, vwap: 1,
+    divergence: 1, fundingRate: 1, fearGreed: 1, mtf: 1,
+  }
+  const stratId = strategy?.id ?? 'balanced'
 
   // ── GATE MODIFIERS ──────────────────────────────────────────────────────────
 
@@ -97,7 +106,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score = osc(ind.rsi, 30, 70)
     const note  = ind.rsi < 22 ? 'Extreme oversold' : ind.rsi < 35 ? 'Oversold'
                 : ind.rsi > 78 ? 'Extreme overbought' : ind.rsi > 65 ? 'Overbought' : 'Neutral'
-    signals.push({ name: 'RSI', value: Math.round(ind.rsi * 10) / 10, score, interpretation: note, weight: 18, bullish: score > 50 })
+    signals.push({ name: 'RSI', value: Math.round(ind.rsi * 10) / 10, score, interpretation: note, weight: 18 * wm.oscillators, bullish: score > 50 })
   }
 
   // MACD — trend-following (weight 20, gated by ADX)
@@ -106,7 +115,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score    = Math.max(0, Math.min(100, 50 + normHist * 160))
     const note     = normHist > 0.12 ? 'Strong bullish' : normHist > 0.02 ? 'Bullish'
                    : normHist < -0.12 ? 'Strong bearish' : normHist < -0.02 ? 'Bearish' : 'Flat'
-    signals.push({ name: 'MACD', value: Math.round(ind.macdHistogram * 10000) / 10000, score, interpretation: note, weight: 20 * adxGate, bullish: score > 50 })
+    signals.push({ name: 'MACD', value: Math.round(ind.macdHistogram * 10000) / 10000, score, interpretation: note, weight: 20 * adxGate * wm.trend, bullish: score > 50 })
   }
 
   // Bollinger Bands — mean-reversion / volatility (weight 14, reduced in squeeze)
@@ -114,7 +123,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score = osc(ind.bbPosition, 20, 80)
     const note  = ind.bbPosition < 12 ? 'Extreme oversold' : ind.bbPosition < 30 ? 'Near lower band'
                 : ind.bbPosition > 88 ? 'Extreme overbought' : ind.bbPosition > 70 ? 'Near upper band' : 'Mid-range'
-    signals.push({ name: 'Bollinger Bands', value: Math.round(ind.bbPosition * 10) / 10, score, interpretation: note, weight: 14 * squeezeGate, bullish: score > 50 })
+    signals.push({ name: 'Bollinger Bands', value: Math.round(ind.bbPosition * 10) / 10, score, interpretation: note, weight: 14 * squeezeGate * wm.oscillators, bullish: score > 50 })
   }
 
   // StochRSI — short-term momentum oscillator (weight 14)
@@ -122,7 +131,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score = osc(ind.stochRSI, 20, 80)
     const note  = ind.stochRSI < 10 ? 'Extreme oversold' : ind.stochRSI < 25 ? 'Oversold'
                 : ind.stochRSI > 90 ? 'Extreme overbought' : ind.stochRSI > 75 ? 'Overbought' : 'Neutral'
-    signals.push({ name: 'StochRSI', value: Math.round(ind.stochRSI * 10) / 10, score, interpretation: note, weight: 14, bullish: score > 50 })
+    signals.push({ name: 'StochRSI', value: Math.round(ind.stochRSI * 10) / 10, score, interpretation: note, weight: 14 * wm.oscillators, bullish: score > 50 })
   }
 
   // EMA Cross — trend structure (weight 18, gated by ADX)
@@ -130,7 +139,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score = ind.emaCross
     const note  = ind.emaCross > 78 ? 'Strong bull align' : ind.emaCross > 58 ? 'Bull alignment'
                 : ind.emaCross < 22 ? 'Strong bear align' : ind.emaCross < 42 ? 'Bear alignment' : 'Neutral cross'
-    signals.push({ name: 'EMA Cross 9/21/50', value: Math.round(ind.emaCross * 10) / 10, score, interpretation: note, weight: 18 * adxGate, bullish: score > 50 })
+    signals.push({ name: 'EMA Cross 9/21/50', value: Math.round(ind.emaCross * 10) / 10, score, interpretation: note, weight: 18 * adxGate * wm.trend, bullish: score > 50 })
   }
 
   // Volume — directional volume (weight 10, uses vol gate)
@@ -138,7 +147,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score = ind.volumeScore
     const note  = ind.volumeScore > 65 ? 'High bull volume' : ind.volumeScore > 55 ? 'Above avg'
                 : ind.volumeScore < 35 ? 'High bear volume' : ind.volumeScore < 45 ? 'Below avg' : 'Normal'
-    signals.push({ name: 'Volume', value: Math.round(ind.volumeScore * 10) / 10, score, interpretation: note, weight: 10 * volGate, bullish: score > 50 })
+    signals.push({ name: 'Volume', value: Math.round(ind.volumeScore * 10) / 10, score, interpretation: note, weight: 10 * volGate * wm.volume, bullish: score > 50 })
   }
 
   // Price Momentum (weight 10)
@@ -146,7 +155,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score = ind.momentum
     const note  = ind.momentum > 68 ? 'Strong upward' : ind.momentum > 55 ? 'Upward'
                 : ind.momentum < 32 ? 'Strong downward' : ind.momentum < 45 ? 'Downward' : 'Neutral'
-    signals.push({ name: 'Momentum', value: Math.round(ind.momentum * 10) / 10, score, interpretation: note, weight: 10, bullish: score > 50 })
+    signals.push({ name: 'Momentum', value: Math.round(ind.momentum * 10) / 10, score, interpretation: note, weight: 10 * wm.momentum, bullish: score > 50 })
   }
 
   // VWAP position — institutional reference price (weight 12)
@@ -154,7 +163,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score = osc(ind.vwapPosition, 30, 70)
     const note  = ind.vwapPosition > 72 ? 'Well above VWAP' : ind.vwapPosition > 55 ? 'Above VWAP'
                 : ind.vwapPosition < 28 ? 'Well below VWAP' : 'Below VWAP'
-    signals.push({ name: 'VWAP', value: Math.round(ind.vwapPosition * 10) / 10, score, interpretation: note, weight: 12, bullish: score > 50 })
+    signals.push({ name: 'VWAP', value: Math.round(ind.vwapPosition * 10) / 10, score, interpretation: note, weight: 12 * wm.vwap, bullish: score > 50 })
   }
 
   // Candle Pattern — body momentum (weight 10)
@@ -162,7 +171,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     const score = ind.candleStrength
     const note  = ind.candleStrength > 70 ? 'Strong bull candles' : ind.candleStrength > 55 ? 'Bull candles'
                 : ind.candleStrength < 30 ? 'Strong bear candles' : ind.candleStrength < 45 ? 'Bear candles' : 'Doji / indecision'
-    signals.push({ name: 'Candle Pattern', value: Math.round(ind.candleStrength * 10) / 10, score, interpretation: note, weight: 10, bullish: score > 50 })
+    signals.push({ name: 'Candle Pattern', value: Math.round(ind.candleStrength * 10) / 10, score, interpretation: note, weight: 10 * wm.momentum, bullish: score > 50 })
   }
 
   // RSI Divergence — early reversal warning (weight 12 when detected)
@@ -173,7 +182,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
       value: ind.rsiDivergence,
       score: bullDiv ? 80 : 20,
       interpretation: bullDiv ? 'Bullish divergence' : 'Bearish divergence',
-      weight: 12,
+      weight: 12 * wm.divergence,
       bullish: bullDiv,
     })
   }
@@ -181,26 +190,26 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
   // Order Book Imbalance (weight 18)
   if (extra.orderBook !== undefined) {
     const note = extra.orderBook > 65 ? 'Strong bid pressure' : extra.orderBook < 35 ? 'Strong ask pressure' : 'Balanced book'
-    signals.push({ name: 'Order Book', value: Math.round(extra.orderBook * 10) / 10, score: extra.orderBook, interpretation: note, weight: 18, bullish: extra.orderBook > 50 })
+    signals.push({ name: 'Order Book', value: Math.round(extra.orderBook * 10) / 10, score: extra.orderBook, interpretation: note, weight: 18 * wm.volume, bullish: extra.orderBook > 50 })
   }
 
   // Funding Rate — contrarian (weight 12)
   if (extra.fundingRate !== undefined) {
     const note = extra.fundingRate > 70 ? 'Shorts overcrowded' : extra.fundingRate < 30 ? 'Longs overcrowded' : 'Neutral funding'
-    signals.push({ name: 'Funding Rate', value: Math.round(extra.fundingRate * 10) / 10, score: extra.fundingRate, interpretation: note, weight: 12, bullish: extra.fundingRate > 50 })
+    signals.push({ name: 'Funding Rate', value: Math.round(extra.fundingRate * 10) / 10, score: extra.fundingRate, interpretation: note, weight: 12 * wm.fundingRate, bullish: extra.fundingRate > 50 })
   }
 
   // Fear & Greed — macro sentiment (weight 8)
   if (extra.fearGreed !== undefined) {
     const note = extra.fearGreed >= 80 ? 'Extreme Fear (buy)' : extra.fearGreed >= 60 ? 'Fear zone'
                : extra.fearGreed <= 20 ? 'Extreme Greed (sell)' : extra.fearGreed <= 40 ? 'Greed zone' : 'Neutral sentiment'
-    signals.push({ name: 'Fear & Greed', value: Math.round(extra.fearGreed * 10) / 10, score: extra.fearGreed, interpretation: note, weight: 8, bullish: extra.fearGreed > 50 })
+    signals.push({ name: 'Fear & Greed', value: Math.round(extra.fearGreed * 10) / 10, score: extra.fearGreed, interpretation: note, weight: 8 * wm.fearGreed, bullish: extra.fearGreed > 50 })
   }
 
   // Multi-timeframe Consensus — structural confirmation (weight 22)
   if (extra.mtfConsensus !== undefined) {
     const note = extra.mtfConsensus > 72 ? 'All TFs bullish' : extra.mtfConsensus < 28 ? 'All TFs bearish' : 'Mixed timeframes'
-    signals.push({ name: 'MTF Consensus', value: Math.round(extra.mtfConsensus * 10) / 10, score: extra.mtfConsensus, interpretation: note, weight: 22, bullish: extra.mtfConsensus > 50 })
+    signals.push({ name: 'MTF Consensus', value: Math.round(extra.mtfConsensus * 10) / 10, score: extra.mtfConsensus, interpretation: note, weight: 22 * wm.mtf, bullish: extra.mtfConsensus > 50 })
   }
 
   // ── WEIGHTED SCORE ──────────────────────────────────────────────────────────
@@ -223,7 +232,7 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
 
   const trendStrong      = adx >= 20
   const volumeConfirmed  = direction === 'up' ? ind.volumeScore >= 48 : ind.volumeScore <= 52
-  const consensusClean   = consensusRatio >= 0.60
+  const consensusClean   = consensusRatio >= (strategy?.consensusMin ?? 0.60)
   const noStrongConflict = direction === 'up' ? ind.rsi < 80 && ind.stochRSI < 88
                                                : ind.rsi > 20 && ind.stochRSI > 12
   const candleAligned    = direction === 'up' ? ind.candleStrength >= 42 : ind.candleStrength <= 58
@@ -278,8 +287,13 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     if (obAgree >= 70) confidence += 3
   }
 
-  // Hard clamp: require all 6 filters to get above 90%
-  const maxConf = filtersPassed >= 6 ? 95 : filtersPassed >= 5 ? 90 : filtersPassed >= 4 ? 85 : filtersPassed >= 3 ? 79 : 73
+  // Strategy confidence adjustment (applied before clamp)
+  confidence += strategy?.confidenceAdj ?? 0
+
+  // Hard clamp: require all 6 filters to get above 90% (also capped by strategy.maxConfidence)
+  const strategyMax = strategy?.maxConfidence ?? 95
+  const filterMax   = filtersPassed >= 6 ? 95 : filtersPassed >= 5 ? 90 : filtersPassed >= 4 ? 85 : filtersPassed >= 3 ? 79 : 73
+  const maxConf     = Math.min(strategyMax, filterMax)
   confidence = Math.max(51, Math.min(maxConf, confidence))
 
   // ── SIGNAL QUALITY SCORE (0-100) ─────────────────────────────────────────────
@@ -300,5 +314,6 @@ export function predict(ind: IndicatorSet, extra: ExtraSignals = {}): Prediction
     consensusRatio: Math.round(consensusRatio * 100) / 100,
     adxStrength:    Math.round(adx),
     filters,
+    strategyId: stratId,
   }
 }

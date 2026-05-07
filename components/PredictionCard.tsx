@@ -1,6 +1,7 @@
 'use client'
 
 import type { PredictionResult } from '@/lib/predictor'
+import { getStrategy } from '@/lib/strategies'
 
 interface Props {
   timeframe: '10m' | '30m'
@@ -90,6 +91,7 @@ export function PredictionCard({ timeframe, prediction, symbol, onSave, saving, 
   const tier    = getTier(conf)
   const tm      = TIER_META[tier]
   const quality = qualityMeta(prediction.signalQuality ?? 50)
+  const strat   = getStrategy(prediction.strategyId ?? 'balanced')
 
   const borderColor = isUp ? '#22c55e' : '#ef4444'
   const glowColor   = isUp ? `rgba(34,197,94,${tm.glowAlpha})` : `rgba(239,68,68,${tm.glowAlpha})`
@@ -227,6 +229,16 @@ export function PredictionCard({ timeframe, prediction, symbol, onSave, saving, 
             </span>
           </div>
         ))}
+      </div>
+
+      {/* Strategy tag */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-gray-600">สูตร:</span>
+        <span
+          className="text-xs px-2 py-0.5 rounded-full font-medium"
+          style={{ background: `${strat.accentColor}22`, color: strat.accentColor }}>
+          {strat.emoji} {strat.name}
+        </span>
       </div>
 
       {/* Save button */}

@@ -12,6 +12,7 @@ const SHORTCUTS = [
   { key: 'S',   desc: 'Save both predictions' },
   { key: 'F',   desc: 'Force alert check (clears dedup)' },
   { key: 'A',   desc: 'Toggle Alert Settings panel' },
+  { key: 'G',   desc: 'Toggle Strategy Selector' },
   { key: 'T',   desc: 'Toggle Trade Setup panel' },
   { key: 'P',   desc: 'Toggle Pivot Points panel' },
   { key: '?',   desc: 'Show / hide this help' },
